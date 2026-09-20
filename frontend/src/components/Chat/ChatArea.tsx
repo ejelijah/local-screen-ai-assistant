@@ -4,8 +4,9 @@ import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Minimize2 } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
+import { isTauri } from '../../lib/api';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -72,11 +73,16 @@ export function ChatArea() {
   const isEmpty = messages.length === 0 && !isCurrentChatStreaming;
 
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
+  const minimizeWindow = async () => {
+    if (!isTauri()) return;
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().minimize();
+  };
 
   return (
     <div className="flex flex-col h-full">
       {/* Toggle bar */}
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
+      <div className="flex items-center justify-end gap-1 px-3 py-1.5 shrink-0">
         <button
           onClick={toggleSystemPanel}
           className="p-1.5 rounded-md transition-colors cursor-pointer"
@@ -85,6 +91,17 @@ export function ChatArea() {
         >
           <PanelIcon size={16} />
         </button>
+        {isTauri() && (
+          <button
+            onClick={() => void minimizeWindow()}
+            className="p-1.5 rounded-md transition-colors cursor-pointer"
+            style={{ color: 'var(--color-text-tertiary)' }}
+            title="Minimize OpenJarvis"
+            aria-label="Minimize OpenJarvis"
+          >
+            <Minimize2 size={16} />
+          </button>
+        )}
       </div>
 
       {/* Data sources banner */}

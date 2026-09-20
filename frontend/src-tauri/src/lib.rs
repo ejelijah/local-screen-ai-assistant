@@ -2867,6 +2867,7 @@ async fn speech_health(api_url: String) -> Result<serde_json::Value, String> {
 
 #[cfg(target_os = "macos")]
 mod native_overlay {
+    use base64::Engine;
     use objc::declare::ClassDecl;
     use objc::runtime::{Class, Object, Sel, BOOL, NO, YES};
     use objc::{class, msg_send, sel, sel_impl};
@@ -2954,6 +2955,32 @@ mod native_overlay {
         let _ = std::fs::write(&path, json);
     }
 
+    fn capture_screen_base64() -> Result<String, String> {
+        let path = std::env::temp_dir().join(format!(
+            "openjarvis-screen-{}-{}.png",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_nanos()
+        ));
+        let status = std::process::Command::new("/usr/sbin/screencapture")
+            .args(["-x", "-m"])
+            .arg(&path)
+            .status()
+            .map_err(|e| format!("Could not start macOS screen capture: {e}"))?;
+        if !status.success() {
+            return Err(
+                "Screen capture was cancelled or macOS denied Screen Recording permission."
+                    .into(),
+            );
+        }
+        let bytes = std::fs::read(&path)
+            .map_err(|e| format!("Could not read captured screen: {e}"))?;
+        let _ = std::fs::remove_file(&path);
+        Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+    }
+
     /// Apply every transparency trick to the WKWebView.
     /// Called once at creation and again after the page finishes loading.
     unsafe fn force_transparent(wv: *mut Object) {
@@ -3024,6 +3051,26 @@ mod native_overlay {
                     if let Ok(s) = std::ffi::CStr::from_ptr(c).to_str() {
                         if s == "hide" {
                             hide();
+                        } else if s == "minimize" {
+                            minimize();
+                        } else if s == "screenshot" {
+                            let result = capture_screen_base64();
+                            let js = match result {
+                                Ok(image) => {
+                                    format!("window.__jarvisScreenReady({:?})", image)
+                                }
+                                Err(error) => {
+                                    format!("window.__jarvisScreenError({:?})", error)
+                                }
+                            };
+                            let wv_ptr = WEBVIEW_PTR.load(Ordering::SeqCst);
+                            if wv_ptr != 0 {
+                                let _: () = msg_send![
+                                    (wv_ptr as *mut Object),
+                                    evaluateJavaScript: nsstring(&js)
+                                    completionHandler: std::ptr::null_mut::<Object>()
+                                ];
+                            }
                         } else if let Some(json) = s.strip_prefix("save:") {
                             save_conversation(json);
                         } else if let Some(coords) = s.strip_prefix("drag:") {
@@ -3047,8 +3094,9 @@ mod native_overlay {
                 height: 400.0,
             },
         };
+        // NSWindowStyleMaskMiniaturizable = 1 << 2
         // NSWindowStyleMaskNonactivatingPanel = 1 << 7
-        let style: u64 = 1 << 7;
+        let style: u64 = (1 << 2) | (1 << 7);
 
         let cls = Class::get("JarvisOverlayPanel").unwrap();
         let panel: *mut Object = msg_send![cls, alloc];
@@ -3129,6 +3177,11 @@ mod native_overlay {
             return;
         }
         let panel = ptr as *mut Object;
+        let miniaturized: BOOL = msg_send![panel, isMiniaturized];
+        if miniaturized != NO {
+            show();
+            return;
+        }
         let vis: BOOL = msg_send![panel, isVisible];
         if vis != NO {
             hide();
@@ -3143,6 +3196,7 @@ mod native_overlay {
             return;
         }
         let panel = ptr as *mut Object;
+        let _: () = msg_send![panel, deminiaturize: std::ptr::null_mut::<Object>()];
 
         // Re-apply transparency every time (the webview can reset it)
         let wv_ptr = WEBVIEW_PTR.load(Ordering::SeqCst);
@@ -3171,6 +3225,15 @@ mod native_overlay {
         let wv: *mut Object = msg_send![panel, contentView];
         let js = nsstring("document.getElementById('input').focus()");
         let _: () = msg_send![wv, evaluateJavaScript: js completionHandler: nil];
+    }
+
+    pub unsafe fn minimize() {
+        let ptr = PANEL_PTR.load(Ordering::SeqCst);
+        if ptr == 0 {
+            return;
+        }
+        let panel = ptr as *mut Object;
+        let _: () = msg_send![panel, miniaturize: std::ptr::null_mut::<Object>()];
     }
 
     /// Move the panel by a screen-space delta (called from JS drag handler).
@@ -3344,6 +3407,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             unsafe {
                 native_overlay::create(include_str!("overlay.html"), JARVIS_PORT);
+                native_overlay::show();
             }
 
             // Register Cmd+Shift+Space to toggle the overlay
