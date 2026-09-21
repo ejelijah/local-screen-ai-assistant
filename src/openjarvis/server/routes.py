@@ -53,6 +53,7 @@ def _to_messages(chat_messages) -> list[Message]:
                 ]
                 or None,
                 tool_call_id=m.tool_call_id,
+                images=m.images,
             )
         )
     return messages
@@ -232,6 +233,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                             ]
                             or None,
                             tool_call_id=getattr(msg, "tool_call_id", None),
+                            images=getattr(msg, "images", None),
                         )
                     )
                 request_body.messages = new_msgs

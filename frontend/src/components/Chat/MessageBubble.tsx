@@ -37,6 +37,30 @@ function getTextContent(node: any): string {
   return '';
 }
 
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to the DOM fallback used by WebView/Tauri contexts.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) throw new Error('Clipboard write failed');
+}
+
 function CodeBlockPre({ children, ...props }: any) {
   const [copied, setCopied] = useState(false);
   const codeElement = Array.isArray(children) ? children[0] : children;
@@ -45,10 +69,14 @@ function CodeBlockPre({ children, ...props }: any) {
   const lang = match ? match[1] : '';
   const code = getTextContent(codeElement?.props?.children).replace(/\n$/, '');
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await copyText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
   };
 
   return (
@@ -80,22 +108,38 @@ function CodeBlockPre({ children, ...props }: any) {
 }
 
 function CopyMessageButton({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle');
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await copyText(content);
+      setStatus('copied');
+      setTimeout(() => setStatus('idle'), 2000);
+    } catch {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2000);
+    }
   };
 
   return (
     <button
       onClick={handleCopy}
-      className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-      style={{ color: 'var(--color-text-tertiary)' }}
-      title="Copy message"
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors cursor-pointer"
+      style={{
+        color: status === 'error' ? 'var(--color-error)' : 'var(--color-text-tertiary)',
+        border: '1px solid var(--color-border)',
+      }}
+      title={status === 'error' ? 'Copy failed' : 'Copy message'}
+      aria-label={status === 'error' ? 'Copy failed' : 'Copy message'}
+      onMouseEnter={(e) => {
+        if (status !== 'error') e.currentTarget.style.color = 'var(--color-text-secondary)';
+      }}
+      onMouseLeave={(e) => {
+        if (status !== 'error') e.currentTarget.style.color = 'var(--color-text-tertiary)';
+      }}
     >
-      {copied ? <Check size={14} /> : <Copy size={14} />}
+      {status === 'copied' ? <Check size={13} /> : <Copy size={13} />}
+      {status === 'copied' ? 'Copied' : status === 'error' ? 'Copy failed' : 'Copy'}
     </button>
   );
 }

@@ -596,7 +596,7 @@ export function InputArea() {
         )}
       </div>
       <div
-        className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
+        className="flex items-end gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{
           background: 'var(--color-input-bg)',
           border: '1px solid var(--color-input-border)',
@@ -610,8 +610,16 @@ export function InputArea() {
           onKeyDown={handleKeyDown}
           placeholder={selectedModel ? 'Message OpenJarvis...' : 'Pick a model first (⌘K)...'}
           rows={1}
-          className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
-          style={{ color: 'var(--color-text)', maxHeight: '200px' }}
+          className="flex-1 min-w-0 w-full bg-transparent outline-none resize-none text-sm leading-relaxed"
+          style={{
+            color: 'var(--color-text)',
+            maxHeight: '200px',
+            overflowX: 'hidden',
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+          }}
           disabled={streamState.isStreaming || modelLoading}
         />
         {isCurrentChatStreaming ? (
